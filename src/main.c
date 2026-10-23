@@ -62,7 +62,7 @@ static void try_help(void)
 /* CRC of a named file.  Returns 0 on success, -1 with errno set. */
 static int crc_file(const char *name, crc32_t *crc)
 {
-    int fd, n;
+    int fd, n, err;
     crc32_t c = CRC32_INIT;
 
     fd = open(name, O_RDONLY | O_BINARY);
@@ -70,9 +70,14 @@ static int crc_file(const char *name, crc32_t *crc)
         return -1;
     while ((n = read(fd, iobuf, BUFSIZE)) > 0)
         c = crc32_update(c, iobuf, (unsigned)n);
+    err = errno;                /* close may clobber a read error */
     close(fd);
+    if (n < 0) {
+        errno = err;
+        return -1;
+    }
     *crc = CRC32_FINAL(c);
-    return n < 0 ? -1 : 0;
+    return 0;
 }
 
 static int sum_one(const char *name)
