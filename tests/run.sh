@@ -383,7 +383,7 @@ done
 for n in 34 35; do
     rc $n 0
     expect $n <<EOF
-crcsum (dos-crcsum16) $(cat "$top/VERSION")
+crcsum (crcsum16) $(cat "$top/VERSION")
 EOF
 done
 

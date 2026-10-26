@@ -213,7 +213,7 @@ int main(int argc, char **argv)
                 usage(stdout);
                 return RC_OK;
             } else if (stricmp(a, "--version") == 0) {
-                printf("crcsum (dos-crcsum16) %s\n", VERSION);
+                printf("crcsum (crcsum16) %s\n", VERSION);
                 return RC_OK;
             } else {
                 fprintf(stderr, "%s: unrecognized option '%s'\n", progname, a);

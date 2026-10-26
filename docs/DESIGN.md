@@ -189,7 +189,7 @@ crcsum/
     release.yml
 ```
 
-Use the existing `dos-hello16`/tico16 Open Watcom build and CI patterns where convenient, without taking on editor-specific infrastructure.
+Use the existing `hello16`/tico16 Open Watcom build and CI patterns where convenient, without taking on editor-specific infrastructure.
 
 ## 8. Testing strategy
 
