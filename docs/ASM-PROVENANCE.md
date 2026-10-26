@@ -18,10 +18,12 @@ one session with Graham Ollis. In that session it:
 3. Wrote `src/crcsum.asm` and `tests/probe.asm` directly, then tested
    them against `crcsum.exe` with `tests/compare.sh`.
 
-**This was not a clean-room process.** The same agent read the Watcom
-source and wrote the assembly, with no written specification in
-between. As a result, two routines follow their Watcom counterparts
-closely (see the review below).
+**This first pass was not a clean-room process.** The same agent read
+the Watcom source and wrote the assembly, with no written
+specification in between. A first review (below) found two routines
+that followed their Watcom counterparts closely. Both were then
+rewritten in a clean room (see [Clean-room rewrite](#clean-room-rewrite)),
+and a second review found no close translation left.
 
 ## Watcom sources read
 
@@ -52,18 +54,18 @@ plus the headers installed with Open Watcom 2.0.
 | `streamio/c/fopen.c` | `fopen` | Skimmed only: compatibility sharing mode. |
 | installed `h/stdio.h`, `h/share.h` | | `BUFSIZ` is 512 for 16-bit code; `SH_COMPAT` is 0. |
 
-## Independent review
+## First review
 
 A separate agent, which had not seen the reasoning behind the code,
-compared every routine in both files with the Watcom files above. It
-classed each routine as **(a) independent** (from crcsum's own C or
+compared every routine in both files with the Watcom files above,
+before the clean-room rewrite. It classed each routine as **(a) independent** (from crcsum's own C or
 generic technique), **(b) behaviour-matching** (reproduces Watcom
 behaviour in its own structure) or **(c) close translation**.
 
 | Routine | Class | Notes |
 | --- | --- | --- |
-| `parse_tail` | **(c)** | Follows `_SplitParms` (`initargv.c` lines 84–164) statement by statement, including the `p[-2]` look-back. Its three-state enum is reduced to a flag. |
-| `set_errno`, `doserrs` table | **(c)** | Translates the DOS branch of `__set_errno_dos` (`dosret.c` 324–385): the same conditions and order, the table value for value, and Watcom's internal table indexes 5, 14 and 19. The mapping values are a compatibility fact, but the layout is Watcom's. |
+| `parse_tail` (since replaced) | **(c)** | Followed `_SplitParms` (`initargv.c` lines 84–164) statement by statement, including the `p[-2]` look-back. Its three-state enum was reduced to a flag. |
+| `set_errno`, `doserrs` table (since replaced) | **(c)** | Translated the DOS branch of `__set_errno_dos` (`dosret.c` 324–385): the same conditions and order, the table value for value, and Watcom's internal table indexes 5, 14 and 19. The mapping values are a compatibility fact, but the layout is Watcom's. |
 | `errlist` | (b), data | 15 strings verbatim from `_sys_errlist` and `UNKNOWN_ERROR`, renumbered densely. They must be verbatim for identical output. |
 | `putc`, `flush`, `mgetc` | (b) | Same observable sequence as `fputc`, `__flush` + `__qwrite` and `__fill_buffer`, but structured independently; the order is dictated by the behaviour. |
 | startup, `nomem`, `open_ro`, `dos`, `isatty` | (b), trivial | Standard DOS idioms that match Watcom's behaviour. |
@@ -77,17 +79,69 @@ The reviewer noted one small behavioural difference. Watcom writes
 `Not enough memory` to `CON`; the assembly writes it to standard
 error. The two differ only when standard error is redirected.
 
+## Clean-room rewrite
+
+`parse_tail`, `set_errno` and its table were rewritten in a two-party
+clean room:
+
+1. **Black-box tests first.** Before anything was rewritten, the
+   following were added to `tests/compare.sh`:
+   - 14 more quoting cases, with runs of backslashes before quotes;
+   - `tests/fakeerr.asm`, a new tool that runs a build 256 times with
+     every DOS open failing with each error code 0–255 in turn, for a
+     file and for a manifest.
+
+   They found one more behaviour: an open that "fails" with code 0 is
+   reported as `Too many open files`.
+2. **The specification.** The author of the first pass wrote
+   [ASM-CLEANROOM.md](ASM-CLEANROOM.md). It describes behaviour and
+   interfaces only, and its examples and error table were taken from
+   the output of `crcsum.exe` (black box), not from the Watcom source.
+3. **The implementation.** A separate agent implemented the routines.
+   It had never read the Open Watcom runtime source and was told not
+   to (on disk, on the web, or from memory). It worked in a copy of
+   the repository with the three pieces removed, without git history,
+   these documents or the Watcom tree. It read only the
+   specification, `src/crcsum.asm` and the test scripts, and tested
+   against `crcsum.exe`. Its own statement: it read only those files
+   and had no lapses.
+4. **Integration.** Its file was copied into the repository unedited.
+   Both test suites pass (`tests/run.sh` 72 of 72, `tests/compare.sh`
+   778 of 778).
+
+After the second review (below), the internal message numbers (`E_*`)
+were renumbered alphabetically. The first pass had numbered the first
+ten in the same order as Watcom's DOS errno values; the numbers are
+not visible in the output.
+
+## Second review
+
+Another separate agent compared the three new pieces with
+`_SplitParms`, `__set_errno_dos` and `__sopen`:
+
+| Routine | Class | Notes |
+| --- | --- | --- |
+| `parse_tail` | (b) | Same behaviour, including the backslash-quote rule, but its own design: one pass, a quote bit, the previous byte carried in a register, tests in a different order. There is no statement-by-statement correspondence. |
+| `set_errno`, `errtab` | (b) | Codes 0–18 by table, then direct range tests, with no index redirection or sentinel entry. The 19 table values equal Watcom's DOS mapping, which is forced, because every code is compared byte for byte with `crcsum.exe`. |
+| `open_ro` | (b) | It handles error 0 directly, not through Watcom's mechanism (a sentinel handle and an unsigned compare). |
+
+Verdict, in its words: "None of the three routines is a close
+translation … A licensing record can fairly describe these routines
+as independently written for compatibility, with the table values
+taken for behavioural fidelity."
+
 ## Status
 
-`parse_tail`, `set_errno` and `doserrs` are close translations of
-Watcom-licensed routines. They are short, and almost all of their
-content is functional, but until they are rewritten the assembly
-should not be described as written independently of Watcom. The
-reviewer recommends rewriting them from a prose specification, ideally
-by someone who has not read the Watcom files. For `set_errno`, that
-means mapping DOS codes straight to messages rather than through
-Watcom's table layout. Each rewrite should be tested with comparison
-cases for quoting and for every DOS error code.
+No routine is classed as a close translation:
+
+- Every routine in `src/crcsum.asm` is either independent (a) or
+  matches Watcom's behaviour in its own structure (b).
+- The `strerror` messages, the `Not enough memory` text, the DOS
+  error mapping values and the stdio buffer sizes match Watcom
+  because they are observable behaviour.
+
+The first-pass versions of `parse_tail` and `set_errno` remain in the
+history of PR #3 (commit `1bd6ac4`).
 
 Nothing from this experiment should be carried into `gr-dos/libc16`,
 which keeps its own specification-first process.

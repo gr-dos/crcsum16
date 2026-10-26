@@ -69,7 +69,7 @@ for its minimum allocation.)
 | Test | Result |
 | --- | --- |
 | `tests/run.sh` (72 checks, the existing suite) | 72 passed |
-| `tests/compare.sh` (117 cases, 341 files compared, run normally and under DOS 2.11) | 682 passed |
+| `tests/compare.sh` (133 cases, 389 files compared, run normally and under DOS 2.11) | 778 passed |
 
 `tests/compare.sh` is new. It runs the same commands with the Watcom
 build and the assembly build, each in its own identical fixture tree,
@@ -87,8 +87,11 @@ covers what `run.sh` does not:
   patterns, directories and subdirectories skipped, no match, a missing
   directory, an invalid drive;
 - arguments: quoting (`"a.txt"`, `"a b"`, `a\"b`, `a\\"b c"`, `\"a`,
-  `""`, unbalanced quotes, quoted leading and trailing spaces), tabs,
-  and command tails of up to 125 characters;
+  `""`, runs of backslashes before a quote, unbalanced quotes, quoted
+  leading and trailing spaces), tabs, and command tails of up to 125
+  characters;
+- every DOS error code 0 to 255, for a file and for a manifest, using
+  `tests/fakeerr.com` to make each open fail with it;
 - options: every spelling and case, combined short options, options
   after `--`, `-` and `-c -`, and the first of several errors winning;
 - manifests: lines of exactly 254 and 255 characters, lines longer
@@ -111,11 +114,6 @@ covers what `run.sh` does not:
 
 The harness was checked to catch a difference: a build with a 511-byte
 stdout buffer and one changed `strerror` message fails 12 steps.
-
-The error messages reached in these tests are ENOENT, EACCES and
-ENOSPC. The other `strerror` messages need DOS errors (too many open
-files, sharing violations, disk errors) that DOSBox-X does not produce
-here; they follow the same table and code path.
 
 ## Building
 
@@ -180,21 +178,23 @@ What is not the same:
 
 ## Licensing and provenance
 
-`src/crcsum.asm` and `tests/probe.asm` were written for this
-repository and are MIT licensed (with SPDX headers). While writing
-them, parts of the Open Watcom C runtime source were read to learn its
-behaviour. That was not a clean-room process.
+`src/crcsum.asm` and the test tools `tests/probe.asm` and
+`tests/fakeerr.asm` were written for this repository and are MIT
+licensed (with SPDX headers).
 
-An independent review found two routines that are close translations
-of Watcom routines: `parse_tail` (from `_SplitParms`) and `set_errno`
-with its `doserrs` table (from `__set_errno_dos`). Until they are
-rewritten, the assembly should not be called independent of Watcom.
-The 15 `strerror` strings and `Not enough memory` are Watcom's text,
-because they are output.
+While writing the first pass, parts of the Open Watcom C runtime
+source were read to learn its behaviour; that was not a clean-room
+process. A review found two routines that closely translated Watcom
+routines: `parse_tail` and `set_errno`. Both were then rewritten in a
+two-party clean room, from [ASM-CLEANROOM.md](ASM-CLEANROOM.md), by
+an implementer that had not read the Watcom source. A second review
+classes no routine as a close translation.
 
-[ASM-PROVENANCE.md](ASM-PROVENANCE.md) is the full record: the Watcom
-files read, what was taken from each, the review routine by routine,
-and the recommended rewrites.
+The `strerror` strings, `Not enough memory`, the DOS error mapping and
+the stdio buffer sizes match Watcom because they are observable
+output.
+
+[ASM-PROVENANCE.md](ASM-PROVENANCE.md) is the full record.
 
 ## Maintenance cost
 

@@ -57,21 +57,21 @@ S_LBF       equ 8           ; flush at each '\n' (a device)
 S_ERR       equ 9           ; a write failed, as ferror()
 
 ; Messages for strerror, numbered as errlist below.
-E_NOERR     equ 0
-E_NOENT     equ 1
-E_2BIG      equ 2
-E_NOEXEC    equ 3
-E_BADF      equ 4
-E_NOMEM     equ 5
-E_ACCES     equ 6
-E_EXIST     equ 7
-E_XDEV      equ 8
-E_INVAL     equ 9
-E_MFILE     equ 10
+E_2BIG      equ 0
+E_ACCES     equ 1
+E_BADF      equ 2
+E_EXIST     equ 3
+E_INVAL     equ 4
+E_MFILE     equ 5
+E_NODEV     equ 6
+E_NOENT     equ 7
+E_NOERR     equ 8
+E_NOEXEC    equ 9
+E_NOMEM     equ 10
 E_NOSPC     equ 11
 E_RANGE     equ 12
-E_NODEV     equ 13
-E_UNKNOWN   equ 14
+E_UNKNOWN   equ 13
+E_XDEV      equ 14
 
 start:
         cld
@@ -251,79 +251,73 @@ nomem:
         int     0x21
 
 ;
-; Split the command tail into argv in place, as the Open Watcom runtime
-; does: arguments are separated by spaces and tabs, a double quote
-; starts or ends quoting and is removed, and \" is a literal quote,
-; except that in \\" the second backslash is dropped and the quote
-; still quotes.
+; Split the command tail into argv, as the C runtime does: blanks
+; separate arguments, '"' turns quoting on and off, and \" is a
+; literal '"', or a quote if a backslash comes before it.  The
+; arguments are copied in place, since one is never longer than its
+; text, and each is ended by a NUL.  AL is the byte, AH the one before
+; it in the tail, DL is 1 inside quotes.
 ;
 parse_tail:
-        mov     bl, [TAILLEN]
+        mov     si, TAIL
+        mov     bl, [si - 1]            ; at most 126 bytes
         cmp     bl, 126
         jbe     .len
         mov     bl, 126
 .len:
         mov     bh, 0
-        mov     byte [TAIL + bx], 0
-        mov     byte [TAILLEN], 0       ; not a backslash, for \" below
-        mov     si, TAIL
-        mov     bx, argv
-.skip:
-        lodsb
-        cmp     al, ' '
-        je      .skip
-        cmp     al, 9
-        je      .skip
-        test    al, al
-        jz      .done
-        dec     si
-        mov     dl, 0                   ; inside quotes
-        cmp     al, '"'
-        jne     .start
-        inc     si
-        inc     dx
-.start:
+        mov     [bx + si], bh           ; so the tail ends at a NUL
         mov     di, si
-        mov     [bx], si
-        inc     bx
-        inc     bx
-.char:
-        mov     al, [si]
-        cmp     al, '"'
-        jne     .notquote
-        inc     si
-        xor     dl, 1
-        jmp     .char
-.notquote:
+        mov     bx, argv
+        xor     ax, ax
+        cwd
+.blank:
+        mov     ah, al
+        lodsb
         cmp     al, ' '
         je      .blank
         cmp     al, 9
-        jne     .notblank
-.blank:
+        je      .blank
+        test    al, al
+        jz      .end
+        mov     [bx], di                ; an argument starts
+        inc     bx
+        inc     bx
+        jmp     .byte
+.next:
+        mov     ah, al
+        lodsb
+        test    al, al
+        jz      .argend
         test    dl, dl
-        jz      .end
-.notblank:
-        test    al, al
-        jz      .end
+        jnz     .byte
+        cmp     al, ' '
+        je      .argend
+        cmp     al, 9
+        je      .argend
+.byte:
+        cmp     al, '"'
+        je      .quote
         cmp     al, '\'
-        jne     .store
-        cmp     byte [si + 1], '"'
-        jne     .store
-        inc     si
-        cmp     byte [si - 2], '\'
-        je      .char
+        jne     .copy
+        cmp     byte [si], '"'
+        jne     .copy
+        inc     si                      ; \" : the backslash is dropped
+        cmp     ah, '\'
         mov     al, '"'
-.store:
-        mov     [di], al
-        inc     di
-        inc     si
-        jmp     .char
-.end:
+        je      .quote
+.copy:
+        stosb
+        jmp     .next
+.quote:
+        xor     dl, 1
+        jmp     .next
+.argend:
         mov     byte [di], 0
-        inc     si
-        test    al, al
-        jnz     .skip
-.done:
+        inc     di
+        test    al, al                  ; a blank, or the end
+        jnz     .blank
+.end:
         mov     [argv_end], bx
         ret
 
@@ -908,44 +902,54 @@ open_ro:
 .open:
         mov     dx, si
         mov     ax, 0x3d00
+        int     0x21
+        jnc     .ret
+        test    ax, ax                  ; error 0 is reported as EMFILE
+        jnz     set_errno
+        mov     byte [errno], E_MFILE
+        stc
+.ret:
+        ret
 
-; Call DOS.  If it fails (CF set), set [errno] from the error in AX.
+; Call DOS.  If it fails (CF set), set [errno] from the error in AL.
 dos:
         int     0x21
-        jnc     set_errno.ret
+        jnc     .ret
+        call    set_errno
+.ret:
+        ret
 
-; Set [errno] from the DOS error in AL, as the Open Watcom runtime
-; does, and set CF.  Keeps AX.
+; Set [errno] from the DOS error in AL, and set CF.  Keeps all
+; registers.  Errors 0 to 18 are looked up in errtab; from DOS 3, 32
+; and 33 (sharing and lock violations) are EACCES and 80 is EEXIST;
+; anything else is unknown.
 set_errno:
         push    ax
         push    bx
-        cmp     byte [dosmajor], 3
-        jb      .max
-        cmp     al, 0x50                ; file exists
-        jne     .notexist
-        mov     al, 14
-        jmp     .max
-.notexist:
-        cmp     al, 0x22                ; DOS 3 errors past sharing
-        jb      .notnew
-        mov     al, 19
-        jmp     .max
-.notnew:
-        cmp     al, 0x20                ; sharing or lock violation
-        jb      .max
-        mov     al, 5
-.max:
         cmp     al, 19
-        jbe     .map
-        mov     al, 19
-.map:
-        mov     bx, doserrs
+        jae     .high
+        mov     bx, errtab
         xlat
+        jmp     .set
+.high:
+        mov     ah, E_UNKNOWN
+        cmp     byte [dosmajor], 3
+        jb      .ah
+        sub     al, 32
+        cmp     al, 2
+        mov     ah, E_ACCES
+        jb      .ah
+        cmp     al, 80 - 32
+        mov     ah, E_EXIST
+        je      .ah
+        mov     ah, E_UNKNOWN
+.ah:
+        mov     al, ah
+.set:
         mov     [errno], al
         pop     bx
         pop     ax
         stc
-.ret:
         ret
 
 ; ZF clear if handle BX is a device, as isatty().
@@ -1179,30 +1183,30 @@ check       db  0
 endopts     db  0
 anyfile     db  0
 
-; DOS error (as limited by set_errno) to strerror message
-doserrs:
+; errno for DOS errors 0 to 18
+errtab:
         db      E_NOERR, E_INVAL, E_NOENT, E_NOENT, E_MFILE, E_ACCES
         db      E_BADF, E_NOMEM, E_NOMEM, E_NOMEM, E_2BIG, E_NOEXEC
         db      E_UNKNOWN, E_RANGE, E_EXIST, E_NODEV, E_ACCES, E_XDEV
-        db      E_NOENT, E_UNKNOWN
+        db      E_NOENT
 
-; strerror messages, as the Open Watcom runtime's for DOS
+; strerror messages, numbered by the E_* constants
 errlist:
-        db      "No error", 0
-        db      "No such file or directory", 0
         db      "Arg list too big", 0
-        db      "Exec format error", 0
-        db      "Bad file number", 0
-        db      "Not enough memory", 0
         db      "Permission denied", 0
+        db      "Bad file number", 0
         db      "File exists", 0
-        db      "Cross-device link", 0
         db      "Invalid argument", 0
         db      "Too many open files", 0
+        db      "No such device", 0
+        db      "No such file or directory", 0
+        db      "No error", 0
+        db      "Exec format error", 0
+        db      "Not enough memory", 0
         db      "No space left on device", 0
         db      "Result too large", 0
-        db      "No such device", 0
         db      "unknown error", 0
+        db      "Cross-device link", 0
 
 s_check     db  "--check", 0
 s_help      db  "--help", 0

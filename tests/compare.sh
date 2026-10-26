@@ -10,11 +10,14 @@
 # tests/probe.com (built from tests/probe.asm) runs each command, since
 # DOS cannot redirect standard error.  It also records how much memory
 # the program had when it exited; that is reported, not compared.
+# tests/fakeerr.com (tests/fakeerr.asm) runs a build once for every DOS
+# error code 0 to 255, with every file open failing with that code, so
+# that the message for each is compared.
 #
 # This covers what tests/run.sh does not: standard error, argument
 # quoting, option order, buffer and line-length boundaries, manifest
 # line endings and malformed lines, 32-bit counters, devices, DOS
-# errors, and write errors on a full disk.
+# errors (every code), and write errors on a full disk.
 #
 # Each line of the step list is a step: the arguments for crcsum, run
 # with its output, standard error and status recorded.  A line starting
@@ -23,7 +26,7 @@
 # with "!" is a DOS command run as it is, in which %1 is the name of
 # the build (its output directory is c:\o\%1) and %2 its extension.
 #
-# Usage: tests/compare.sh REFERENCE TEST PROBE
+# Usage: tests/compare.sh REFERENCE TEST PROBE FAKEERR
 # Environment: DOSBOX (default dosbox-x), PYTHON (default python3),
 #              KEEP=1 to keep the work directory.
 
@@ -32,7 +35,7 @@ set -u
 DOSBOX=${DOSBOX:-dosbox-x}
 PYTHON=${PYTHON:-python3}
 
-[ $# -eq 3 ] || { echo "usage: $0 reference test probe" >&2; exit 2; }
+[ $# -eq 4 ] || { echo "usage: $0 reference test probe fakeerr" >&2; exit 2; }
 command -v "$DOSBOX" >/dev/null || { echo "$DOSBOX not found" >&2; exit 2; }
 command -v "$PYTHON" >/dev/null || { echo "$PYTHON not found" >&2; exit 2; }
 for f in "$@"; do
@@ -49,6 +52,7 @@ cp "$1" "$work/r2.$rext"
 cp "$2" "$work/t.$text"
 cp "$2" "$work/t2.$text"
 cp "$3" "$work/p.com"
+cp "$4" "$work/f.com"
 cd "$work" || exit 2
 LC_ALL=C
 export LC_ALL
@@ -294,6 +298,20 @@ a\\\\"b c"
 a"."txt
 "a.txt
 a.txt${tab}b.bin
+\\\\\\"a.txt
+a\\\\\\"b
+\\\\"a.txt b"
+a\\\\\\\\"b c"
+"\\\\"
+"a\\"b"
+x\\"y\\"z
+a""b
+"a"b"c d"
+a\\b
+a\\
+"a\\ b"
+\\\\"x"
+"\\"a.txt"
 ${tab}a.txt
 -c good.sum
 -C crlf.sum
@@ -363,6 +381,10 @@ ${tab}a.txt
 =${long}
 =${max}
 =\\"${long}
+!c:\\p c:\\o\\%1\\err1.e c:\\o\\%1\\err1.m >c:\\o\\%1\\err1.o c:\\f.com c:\\%1.%2 a.txt
+!call c:\\rc c:\\o\\%1\\err1.r
+!c:\\p c:\\o\\%1\\err2.e c:\\o\\%1\\err2.m >c:\\o\\%1\\err2.o c:\\f.com c:\\%1.%2 -c good.sum
+!call c:\\rc c:\\o\\%1\\err2.r
 !c:\\p c:\\o\\%1\\full1.e c:\\o\\%1\\full1.m c:\\%1.%2 a.txt b.bin >a:\\full1.txt
 !call c:\\rc c:\\o\\%1\\full1.r
 !c:\\p c:\\o\\%1\\full2.e c:\\o\\%1\\full2.m c:\\%1.%2 e\\* >a:\\full2.txt

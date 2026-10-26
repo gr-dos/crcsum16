@@ -55,9 +55,13 @@ build/probe.com: tests/probe.asm
 	@mkdir -p build
 	$(NASM) -f bin -Werror -o $@ tests/probe.asm
 
-test-asm: crcsum.com crcsum.exe build/probe.com
+build/fakeerr.com: tests/fakeerr.asm
+	@mkdir -p build
+	$(NASM) -f bin -Werror -o $@ tests/fakeerr.asm
+
+test-asm: crcsum.com crcsum.exe build/probe.com build/fakeerr.com
 	sh tests/run.sh $(CURDIR)/crcsum.com
-	sh tests/compare.sh crcsum.exe crcsum.com build/probe.com
+	sh tests/compare.sh crcsum.exe crcsum.com build/probe.com build/fakeerr.com
 
 clean:
 	rm -rf *.o *.obj *.err crcsum.exe crcsum.com build
