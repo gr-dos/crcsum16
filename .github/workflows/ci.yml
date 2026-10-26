@@ -11,9 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: open-watcom/setup-watcom@v0
+      # libc16 and the Open Watcom and JWasm it pins are fetched by make
+      # (scripts/fetch-libc16); the toolchain is cached per libc16 pin.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          version: "2.0"
+          path: build/libc16/build/tools
+          key: libc16-tools-ubuntu-24.04-${{ hashFiles('scripts/fetch-libc16') }}
 
       - name: Install DOSBox-X and NASM
         run: |

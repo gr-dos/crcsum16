@@ -2,15 +2,17 @@
  * crcsum - compute and check CRC-32 checksums
  *
  * An md5sum-style CRC-32 (ZIP/Ethernet) utility for 16-bit MS-DOS
- * (Open Watcom C).
+ * (Open Watcom C with libc16).
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <io.h>
+#include <libc16.h>
 #include "crc32.h"
 #include "manifest.h"
 #include "dosglob.h"
@@ -32,9 +34,37 @@ static char linebuf[LINESIZE];
 
 static const char *progname = "crcsum";
 
+/* errno from the first failed write to standard output, before later
+ * calls (such as the end of a wildcard search) change errno */
+static int write_errno;
+
+/* Writes the strings, up to a null pointer, to fp. */
+static void put(FILE *fp, const char *s, ...)
+{
+    va_list ap;
+
+    va_start(ap, s);
+    for (; s != NULL; s = va_arg(ap, const char *))
+        if (fputs(s, fp) == EOF && fp == stdout && write_errno == 0)
+            write_errno = errno;
+    va_end(ap);
+}
+
+/* "crcsum: A: B\n" on standard error */
+static void error2(const char *a, const char *b)
+{
+    put(stderr, progname, ": ", a, ": ", b, "\n", NULL);
+}
+
+/* n in decimal, in buf (12 bytes) */
+static char *dec(unsigned long n, char *buf)
+{
+    return libc16_ultoa(n, buf, 10);
+}
+
 static void usage(FILE *fp)
 {
-    fprintf(fp,
+    fputs(
         "Usage: crcsum FILE...\n"
         "  or:  crcsum -c MANIFEST...\n"
         "Print or check CRC-32 (ZIP/Ethernet) checksums.\n"
@@ -51,12 +81,12 @@ static void usage(FILE *fp)
         "malformed manifest, or an output write error.\n"
         "\n"
         "CRC-32 detects accidental corruption; it is not secure against\n"
-        "deliberate tampering.\n");
+        "deliberate tampering.\n", fp);
 }
 
 static void try_help(void)
 {
-    fprintf(stderr, "Try 'crcsum --help' for more information.\n");
+    fputs("Try 'crcsum --help' for more information.\n", stderr);
 }
 
 /* CRC of a named file.  Returns 0 on success, -1 with errno set. */
@@ -83,12 +113,17 @@ static int crc_file(const char *name, crc32_t *crc)
 static int sum_one(const char *name)
 {
     crc32_t crc;
+    char hex[9];
+    int i;
 
     if (crc_file(name, &crc) != 0) {
-        fprintf(stderr, "%s: %s: %s\n", progname, name, strerror(errno));
+        error2(name, strerror(errno));
         return RC_FAIL;
     }
-    printf("%08lx *%s\n", crc, name);
+    for (i = 7; i >= 0; i--, crc >>= 4)
+        hex[i] = "0123456789abcdef"[(unsigned)crc & 15];
+    hex[8] = '\0';
+    put(stdout, hex, " *", name, "\n", NULL);
     return RC_OK;
 }
 
@@ -101,25 +136,25 @@ static int check_list(const char *listname)
     unsigned long lineno = 0;
     unsigned long n_ok = 0, n_bad_format = 0, n_bad_read = 0, n_bad_sum = 0;
     int rc = RC_OK;
+    char num[12];
 
     fp = fopen(listname, "rb");
     if (fp == NULL) {
-        fprintf(stderr, "%s: %s: %s\n", progname, listname, strerror(errno));
+        error2(listname, strerror(errno));
         return RC_FATAL;
     }
 
     while ((len = manifest_getline(fp, linebuf, LINESIZE)) != MANIFEST_EOF) {
         lineno++;
         if (len == MANIFEST_IOERR) {
-            fprintf(stderr, "%s: %s: %s\n", progname, listname,
-                    strerror(errno));
+            error2(listname, strerror(errno));
             rc = RC_FATAL;
             break;
         }
         if (len == MANIFEST_LONG) {
             n_bad_format++;
-            fprintf(stderr, "%s: %s: %lu: line too long\n",
-                    progname, listname, lineno);
+            put(stderr, progname, ": ", listname, ": ", dec(lineno, num),
+                ": line too long\n", NULL);
             continue;
         }
         switch (manifest_parse(linebuf, (unsigned)len, &want, &name)) {
@@ -127,40 +162,42 @@ static int check_list(const char *listname)
             continue;
         case MANIFEST_BAD:
             n_bad_format++;
-            fprintf(stderr, "%s: %s: %lu: improperly formatted line\n",
-                    progname, listname, lineno);
+            put(stderr, progname, ": ", listname, ": ", dec(lineno, num),
+                ": improperly formatted line\n", NULL);
             continue;
         }
 
         if (crc_file(name, &got) != 0) {
             n_bad_read++;
-            fprintf(stderr, "%s: %s: %s\n", progname, name, strerror(errno));
-            printf("%s: FAILED open or read\n", name);
+            error2(name, strerror(errno));
+            put(stdout, name, ": FAILED open or read\n", NULL);
         } else if (got != want) {
             n_bad_sum++;
-            printf("%s: FAILED\n", name);
+            put(stdout, name, ": FAILED\n", NULL);
         } else {
             n_ok++;
-            printf("%s: OK\n", name);
+            put(stdout, name, ": OK\n", NULL);
         }
     }
     fclose(fp);
 
     if (rc == RC_OK && n_ok + n_bad_read + n_bad_sum + n_bad_format == 0) {
-        fprintf(stderr, "%s: %s: no checksum lines found\n",
-                progname, listname);
+        error2(listname, "no checksum lines found");
         return RC_FATAL;
     }
 
     if (n_bad_format)
-        fprintf(stderr, "%s: WARNING: %lu line%s improperly formatted\n",
-                progname, n_bad_format, n_bad_format == 1 ? " is" : "s are");
+        put(stderr, progname, ": WARNING: ", dec(n_bad_format, num), " line",
+            n_bad_format == 1 ? " is" : "s are", " improperly formatted\n",
+            NULL);
     if (n_bad_read)
-        fprintf(stderr, "%s: WARNING: %lu listed file%s could not be read\n",
-                progname, n_bad_read, n_bad_read == 1 ? "" : "s");
+        put(stderr, progname, ": WARNING: ", dec(n_bad_read, num),
+            " listed file", n_bad_read == 1 ? "" : "s", " could not be read\n",
+            NULL);
     if (n_bad_sum)
-        fprintf(stderr, "%s: WARNING: %lu computed checksum%s did NOT match\n",
-                progname, n_bad_sum, n_bad_sum == 1 ? "" : "s");
+        put(stderr, progname, ": WARNING: ", dec(n_bad_sum, num),
+            " computed checksum", n_bad_sum == 1 ? "" : "s", " did NOT match\n",
+            NULL);
 
     if (n_bad_format)
         rc = RC_FATAL;
@@ -174,11 +211,11 @@ static int sum_arg(const char *pattern)
     int r = dosglob(pattern, sum_one);
 
     if (r == DOSGLOB_NOMATCH) {
-        fprintf(stderr, "%s: %s: no matching files\n", progname, pattern);
+        error2(pattern, "no matching files");
         return RC_FAIL;
     }
     if (r == DOSGLOB_TOOLONG) {
-        fprintf(stderr, "%s: %s: path too long\n", progname, pattern);
+        error2(pattern, "path too long");
         return RC_FAIL;
     }
     return r;
@@ -190,6 +227,7 @@ int main(int argc, char **argv)
     int i, nfiles = 0, endopts = 0;
     int rc = RC_OK, r;
     const char *a;
+    char opt[2] = { 0, 0 };
 
     for (i = 1; i < argc; i++) {
         a = argv[i];
@@ -199,8 +237,8 @@ int main(int argc, char **argv)
             continue;
         }
         if (a[1] == '\0') {
-            fprintf(stderr, "%s: reading standard input is not supported\n",
-                    progname);
+            put(stderr, progname, ": reading standard input is not supported\n",
+                NULL);
             try_help();
             return RC_FATAL;
         }
@@ -213,10 +251,11 @@ int main(int argc, char **argv)
                 usage(stdout);
                 return RC_OK;
             } else if (stricmp(a, "--version") == 0) {
-                printf("crcsum (crcsum16) %s\n", VERSION);
+                fputs("crcsum (crcsum16) " VERSION "\n", stdout);
                 return RC_OK;
             } else {
-                fprintf(stderr, "%s: unrecognized option '%s'\n", progname, a);
+                put(stderr, progname, ": unrecognized option '", a, "'\n",
+                    NULL);
                 try_help();
                 return RC_FATAL;
             }
@@ -235,7 +274,9 @@ int main(int argc, char **argv)
                 usage(stdout);
                 return RC_OK;
             default:
-                fprintf(stderr, "%s: invalid option -- '%c'\n", progname, *a);
+                opt[0] = *a;
+                put(stderr, progname, ": invalid option -- '", opt, "'\n",
+                    NULL);
                 try_help();
                 return RC_FATAL;
             }
@@ -244,8 +285,8 @@ int main(int argc, char **argv)
     }
 
     if (nfiles == 0) {
-        fprintf(stderr, "%s: missing %s operand\n", progname,
-                check ? "MANIFEST" : "FILE");
+        put(stderr, progname, ": missing ", check ? "MANIFEST" : "FILE",
+            " operand\n", NULL);
         try_help();
         return RC_FATAL;
     }
@@ -261,7 +302,7 @@ int main(int argc, char **argv)
     }
 
     if (fflush(stdout) != 0 || ferror(stdout)) {
-        fprintf(stderr, "%s: write error: %s\n", progname, strerror(errno));
+        error2("write error", strerror(write_errno ? write_errno : errno));
         rc = RC_FATAL;
     }
     return rc;

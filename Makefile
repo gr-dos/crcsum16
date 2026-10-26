@@ -1,20 +1,27 @@
-# Build crcsum.exe for 16-bit MS-DOS with Open Watcom.
-#   make WATCOM=~/opt/watcom
+# Build crcsum.exe for 16-bit MS-DOS with Open Watcom and libc16.
+#   make             fetch and build the pinned libc16 into build/libc16,
+#                    then build crcsum.exe
+#   make LIBC16_ROOT=../libc16
+#                    use a libc16 checkout built with its make
 #   make test        host unit tests, then DOS tests under DOSBox-X
+#
+# crcsum.exe is compiled and linked against libc16 only (its ABI is in
+# libc16's docs/ABI.md), with the Open Watcom toolchain libc16 was built
+# with, named in $(LIBC16_ROOT)/build/tools.env.
 #
 # Optionally, build crcsum.com from 8086 assembly (see docs/ASM.md).
 #   make asm
 #   make test-asm    DOS tests on crcsum.com, then compare it with crcsum.exe
 
-WATCOM ?= $(HOME)/opt/watcom
-export WATCOM
-export INCLUDE := $(WATCOM)/h
-export PATH := $(WATCOM)/binl64:$(WATCOM)/binl:$(PATH)
+LIBC16_ROOT ?= build/libc16
+LIBC16      := $(LIBC16_ROOT)/build/LIBC16.LIB
+WATCOM_ENV   = . $(LIBC16_ROOT)/build/tools.env && PATH=$$WATCOM/binl64:$$PATH
 
 VERSION := $(shell cat VERSION)
 
-CC     = wcl
-CFLAGS = -q -bt=dos -ms -0 -os -s -wx -we -zq '-DVERSION="$(VERSION)"'
+CC     = wcc
+CFLAGS = -q -zq -zl -zld -x -ms -0 -os -s -bt=dos -wx -we \
+         -I$(LIBC16_ROOT)/include '-DVERSION="$(VERSION)"'
 
 HOSTCC     ?= cc
 HOSTCFLAGS ?= -std=c89 -pedantic -Wall -Wextra -Werror -O2
@@ -22,10 +29,24 @@ HOSTCFLAGS ?= -std=c89 -pedantic -Wall -Wextra -Werror -O2
 SRCS = src/main.c src/crc32.c src/manifest.c src/dosglob.c
 HDRS = src/crc32.h src/manifest.h src/dosglob.h
 
+OBJS = $(patsubst src/%.c,build/dos/%.obj,$(SRCS))
+
 UNIT = build/test_crc32 build/test_manifest
 
-crcsum.exe: $(SRCS) $(HDRS) VERSION
-	$(CC) $(CFLAGS) -fe=$@ $(SRCS)
+crcsum.exe: $(OBJS) $(LIBC16)
+	$(WATCOM_ENV) && wlink option quiet, nodefaultlibs, map=build/crcsum.map \
+	  format dos name $@ $(foreach o,$(OBJS),file $(o)) library $(LIBC16)
+
+build/dos/%.obj: src/%.c $(HDRS) VERSION $(LIBC16)
+	@mkdir -p build/dos
+	$(WATCOM_ENV) && $(CC) $(CFLAGS) -fo=$@ $<
+
+# The pinned libc16 (scripts/fetch-libc16). A LIBC16_ROOT given on the
+# command line must already be built.
+ifeq ($(LIBC16_ROOT),build/libc16)
+$(LIBC16): scripts/fetch-libc16
+	scripts/fetch-libc16 $(LIBC16_ROOT)
+endif
 
 build/test_crc32: tests/test_crc32.c tests/unit.h src/crc32.c src/crc32.h
 	@mkdir -p build
@@ -63,7 +84,9 @@ test-asm: crcsum.com crcsum.exe build/probe.com build/fakeerr.com
 	sh tests/run.sh $(CURDIR)/crcsum.com
 	sh tests/compare.sh crcsum.exe crcsum.com build/probe.com build/fakeerr.com
 
+# Keeps build/libc16, which takes a while to fetch.
 clean:
-	rm -rf *.o *.obj *.err crcsum.exe crcsum.com build
+	rm -rf *.o *.obj *.err crcsum.exe crcsum.com \
+	  $(filter-out build/libc16,$(wildcard build/*))
 
 .PHONY: unit dostest test asm test-asm clean

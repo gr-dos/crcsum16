@@ -1,22 +1,29 @@
 # crcsum16
 
 A small, fast CRC-32 checksum utility for 16-bit MS-DOS, built with Open
-Watcom. It works like `md5sum`: print checksums for files, save them to
+Watcom and [libc16](https://github.com/gr-dos/libc16). It works like `md5sum`: print checksums for files, save them to
 a manifest, and check the manifest later, for example after copying
 files to an XT.
 
 The resulting `crcsum.exe` is a small-model, real-mode 8086 executable
-(about 17 KB) that runs on any DOS from an original PC up.
+(about 6 KB) that runs on any DOS from an original PC up.
 
 CRC-32 detects accidental corruption. It is **not** cryptographically
 secure and must not be used to authenticate untrusted files.
 
 ## Building
 
-Requires Open Watcom (tested with the Linux-hosted toolchain).
+`crcsum.exe` links [libc16](https://github.com/gr-dos/libc16), a C
+runtime for small-model DOS programs, instead of Open Watcom's own, and
+is built with the Open Watcom toolchain that libc16 pins. By default
+`make` runs `scripts/fetch-libc16`, which clones libc16 at the revision
+pinned in that script into `build/libc16` and builds it there; libc16's
+build fetches its Open Watcom snapshot and JWasm into
+`build/libc16/build/tools`. This needs `git`, `curl`, `xz` and a host C
+compiler. To move to a newer libc16, change the pin.
 
-    make                         # uses ~/opt/watcom by default
-    make WATCOM=/path/to/watcom  # or point it elsewhere
+    make                         # fetches libc16 if needed, builds crcsum.exe
+    make LIBC16_ROOT=../libc16   # or use a built local libc16 checkout
     make test                    # host unit tests, then DOS tests
     make unit                    # host unit tests only
     make dostest                 # tests/run.sh under DOSBox-X only
@@ -27,7 +34,7 @@ tests need `dosbox-x` and `python3` on the host (override with `DOSBOX=`
 and `PYTHON=`); set `KEEP=1` to keep the work directory.
 
 `make asm` builds `crcsum.com`, an 8086 assembly version of the same
-program (needs `nasm`): 3.5 KB instead of 17 KB. `make test-asm` runs
+program (needs `nasm`): 3.3 KB instead of 5.8 KB. `make test-asm` runs
 the DOS tests on it and compares it with `crcsum.exe`. It is released
 alongside `crcsum.exe`: see [docs/ASM.md](docs/ASM.md).
 
@@ -131,7 +138,8 @@ On Linux, a manifest can be made with:
 - `docs/DESIGN.md`: the design
 - `src/crcsum.asm`, `tests/compare.sh`, `tests/probe.asm`,
   `docs/ASM*.md`, `tests/fakeerr.asm`: the assembly experiment
-- `Makefile`: Open Watcom build
+- `Makefile`: Open Watcom and libc16 build
+- `scripts/fetch-libc16`: fetches and builds the pinned libc16
 - `VERSION`: the version, compiled in and printed by `--version`
 
 ## License
