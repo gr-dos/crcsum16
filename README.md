@@ -26,15 +26,15 @@ The unit tests need a host C compiler (`HOSTCC`, default `cc`). The DOS
 tests need `dosbox-x` and `python3` on the host (override with `DOSBOX=`
 and `PYTHON=`); set `KEEP=1` to keep the work directory.
 
-`make asm` builds `crcsum.com`, an experimental 8086 assembly version of
-the same program (needs `nasm`): 3.5 KB instead of 17 KB. `make
-test-asm` runs the DOS tests on it and compares it with `crcsum.exe`.
-It is not part of releases; see [docs/ASM.md](docs/ASM.md).
+`make asm` builds `crcsum.com`, an 8086 assembly version of the same
+program (needs `nasm`): 3.5 KB instead of 17 KB. `make test-asm` runs
+the DOS tests on it and compares it with `crcsum.exe`. It is released
+alongside `crcsum.exe`: see [docs/ASM.md](docs/ASM.md).
 
 The version is the one line in `VERSION`, DOS style (0.01, 0.02, ...
 1.00), not semantic versioning. When a PR that changes it is merged to
 `main`, the release workflow tags the merge commit `v<VERSION>` and
-publishes a GitHub release with `crcsum.exe` attached.
+publishes a GitHub release with `crcsum.exe` and `crcsum.com` attached.
 
 ## Usage
 

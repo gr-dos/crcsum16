@@ -3,9 +3,10 @@
 This experiment rewrites crcsum in 8086 assembly (`src/crcsum.asm`,
 NASM) as a `.COM` file, to see how small a program with no C runtime
 can be (issue #2). The C sources with Open Watcom are still the default
-build, and the only one released. `make asm` builds `crcsum.com`; CI
-builds and tests it on every PR. The C version and its tests are the
-specification for the assembly version.
+build. Releases include both `crcsum.exe` and `crcsum.com`, and CI
+tests both: `make asm` builds `crcsum.com`, and the release workflow
+runs `make test-asm` before attaching it. The C version and its tests
+are the specification for the assembly version.
 
 ## Result
 
@@ -218,15 +219,14 @@ times as fast as Watcom's in a rough DOSBox-X run (1 MB at a fixed
 3000 cycles: 4.8 s against 14.7 s). It runs on the 8086 and DOS 2.0,
 which is the machine crcsum is for.
 
-Before shipping it:
+`crcsum.com` is now released alongside `crcsum.exe` (from 0.02). Still
+to do:
 
 1. A rule that a PR changing the C version also changes
-   `src/crcsum.asm` and adds comparison cases. CI already runs `make
-   test-asm`.
+   `src/crcsum.asm` and adds comparison cases. CI and the release
+   workflow already run `make test-asm`.
 2. A smoke test on real hardware (the 8088/V20 targets in
    `docs/DESIGN.md`), since all testing so far is under DOSBox-X.
-3. Then add `crcsum.com` to the release workflow, which this change
-   leaves alone.
 
 Keep the C version as the specification and reference. Linking the C
 version against a minimal per-function library (`gr-dos/libc16`) is a

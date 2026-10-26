@@ -2,7 +2,7 @@ name: release
 
 # main only changes by merging a PR, so a push to main is a merge.
 # If VERSION names a version without a tag, tag the merge commit and
-# publish a release with crcsum.exe attached.
+# publish a release with crcsum.exe and crcsum.com attached.
 
 on:
   push:
@@ -39,17 +39,19 @@ jobs:
         with:
           version: "2.0"
 
-      - name: Install DOSBox-X
+      - name: Install DOSBox-X and NASM
         if: steps.version.outputs.new == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y dosbox-x
+          sudo apt-get install -y dosbox-x nasm
 
       - name: Build and test
         if: steps.version.outputs.new == 'true'
         run: |
           make
           make test
+          make asm
+          make test-asm
 
       - name: Create release
         if: steps.version.outputs.new == 'true'
@@ -57,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "v$VERSION" crcsum.exe \
+          gh release create "v$VERSION" crcsum.exe crcsum.com \
             --target "$GITHUB_SHA" \
             --title "v$VERSION" \
             --generate-notes
