@@ -26,6 +26,11 @@ The unit tests need a host C compiler (`HOSTCC`, default `cc`). The DOS
 tests need `dosbox-x` and `python3` on the host (override with `DOSBOX=`
 and `PYTHON=`); set `KEEP=1` to keep the work directory.
 
+`make asm` builds `crcsum.com`, an experimental 8086 assembly version of
+the same program (needs `nasm`): 3.5 KB instead of 17 KB. `make
+test-asm` runs the DOS tests on it and compares it with `crcsum.exe`.
+It is not part of releases; see [docs/ASM.md](docs/ASM.md).
+
 The version is the one line in `VERSION`, DOS style (0.01, 0.02, ...
 1.00), not semantic versioning. When a PR that changes it is merged to
 `main`, the release workflow tags the merge commit `v<VERSION>` and
@@ -124,6 +129,8 @@ On Linux, a manifest can be made with:
 - `tests/test_*.c`: host unit tests
 - `tests/run.sh`: DOS tests, run under DOSBox-X
 - `docs/DESIGN.md`: the design
+- `src/crcsum.asm`, `tests/compare.sh`, `tests/probe.asm`,
+  `docs/ASM.md`: the assembly experiment
 - `Makefile`: Open Watcom build
 - `VERSION`: the version, compiled in and printed by `--version`
 

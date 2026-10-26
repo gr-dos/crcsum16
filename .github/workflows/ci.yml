@@ -15,13 +15,19 @@ jobs:
         with:
           version: "2.0"
 
-      - name: Install DOSBox-X
+      - name: Install DOSBox-X and NASM
         run: |
           sudo apt-get update
-          sudo apt-get install -y dosbox-x
+          sudo apt-get install -y dosbox-x nasm
 
       - name: Build
         run: make
 
       - name: Test
         run: make test
+
+      - name: Build assembly version
+        run: make asm
+
+      - name: Test assembly version
+        run: make test-asm
