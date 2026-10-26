@@ -1,6 +1,10 @@
 # Build crcsum.exe for 16-bit MS-DOS with Open Watcom.
 #   make WATCOM=~/opt/watcom
 #   make test        host unit tests, then DOS tests under DOSBox-X
+#
+# Optionally, build crcsum.com from 8086 assembly (see docs/ASM.md).
+#   make asm
+#   make test-asm    DOS tests on crcsum.com, then compare it with crcsum.exe
 
 WATCOM ?= $(HOME)/opt/watcom
 export WATCOM
@@ -39,7 +43,27 @@ dostest: crcsum.exe
 
 test: unit dostest
 
-clean:
-	rm -rf *.o *.obj *.err crcsum.exe build
+# 8086 assembly, as a .COM
+NASM ?= nasm
 
-.PHONY: unit dostest test clean
+asm: crcsum.com
+
+crcsum.com: src/crcsum.asm VERSION
+	$(NASM) -f bin -Werror '-DVERSION="$(VERSION)"' -o $@ src/crcsum.asm
+
+build/probe.com: tests/probe.asm
+	@mkdir -p build
+	$(NASM) -f bin -Werror -o $@ tests/probe.asm
+
+build/fakeerr.com: tests/fakeerr.asm
+	@mkdir -p build
+	$(NASM) -f bin -Werror -o $@ tests/fakeerr.asm
+
+test-asm: crcsum.com crcsum.exe build/probe.com build/fakeerr.com
+	sh tests/run.sh $(CURDIR)/crcsum.com
+	sh tests/compare.sh crcsum.exe crcsum.com build/probe.com build/fakeerr.com
+
+clean:
+	rm -rf *.o *.obj *.err crcsum.exe crcsum.com build
+
+.PHONY: unit dostest test asm test-asm clean

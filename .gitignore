@@ -2,4 +2,5 @@
 *.obj
 *.err
 *.exe
+*.com
 /build/

@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Test crcsum.exe under DOSBox-X.
+# Test crcsum.exe (or crcsum.com, the assembly version) under DOSBox-X.
 #
 # Fixtures and expected checksums are made on the host with Python's
 # zlib.crc32, one batch file runs every DOS-side step, and the results
@@ -10,7 +10,7 @@
 # goto rather than "if errorlevel N echo ... >file" because the DOSBox-X
 # shell opens the redirection even when the test is false.
 #
-# Usage: tests/run.sh [path/to/crcsum.exe]
+# Usage: tests/run.sh [path/to/crcsum.exe or crcsum.com]
 # Environment: DOSBOX (default dosbox-x), PYTHON (default python3),
 #              KEEP=1 to keep the work directory.
 
@@ -41,7 +41,7 @@ print("%08x" % zlib.crc32(open(sys.argv[1], "rb").read()))' "$1"
 # fixtures
 
 cd "$work" || exit 2
-cp "$exe" crcsum.exe
+cp "$exe" "crcsum.$(echo "${exe##*.}" | tr 'A-Z' 'a-z')"
 
 printf 'hello\n' > a.txt
 : > empty.dat
@@ -383,7 +383,7 @@ done
 for n in 34 35; do
     rc $n 0
     expect $n <<EOF
-crcsum (dos-crcsum16) $(cat "$top/VERSION")
+crcsum (crcsum16) $(cat "$top/VERSION")
 EOF
 done
 
