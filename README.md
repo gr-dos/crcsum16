@@ -130,7 +130,7 @@ On Linux, a manifest can be made with:
 - `tests/run.sh`: DOS tests, run under DOSBox-X
 - `docs/DESIGN.md`: the design
 - `src/crcsum.asm`, `tests/compare.sh`, `tests/probe.asm`,
-  `docs/ASM.md`: the assembly experiment
+  `docs/ASM.md`, `docs/ASM-PROVENANCE.md`: the assembly experiment
 - `Makefile`: Open Watcom build
 - `VERSION`: the version, compiled in and printed by `--version`
 

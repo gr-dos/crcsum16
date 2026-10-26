@@ -142,10 +142,10 @@ version give the same bytes.
 ## How it differs from the C version
 
 The assembly version is a separate implementation, written from the C
-sources and the behaviour of the Watcom build. It contains no Open
-Watcom runtime code and does not link with any library. The parts of
-the C runtime that crcsum's behaviour depends on are reimplemented to
-match:
+sources and the behaviour of the Watcom build. It does not link with
+any library. The parts of the C runtime that crcsum's behaviour
+depends on are reimplemented to match (see Licensing and provenance
+for how):
 
 - **Argument splitting** (`parse_tail`) follows the Open Watcom rules
   exactly: spaces and tabs separate, a double quote toggles quoting and
@@ -167,8 +167,9 @@ match:
 
 What is not the same:
 
-- **Out of memory**: see Memory above.
-- **Impossible cases are left out.** Watcom's `dosglob` reports `path
+- **Out of memory**: see Memory above. The message also goes to
+  standard error, where Watcom writes it to `CON`.
+- **Impossible cases are left out.** crcsum's `dosglob.c` reports `path
   too long` for a directory part over 131 characters, but a DOS
   command tail has at most 126. A DOS error with a nonzero high byte,
   and the C runtime's handle-number limit, cannot happen under DOS. The
@@ -180,15 +181,20 @@ What is not the same:
 ## Licensing and provenance
 
 `src/crcsum.asm` and `tests/probe.asm` were written for this
-repository, from `src/*.c` and from observing the Watcom build, and are
-MIT licensed like the rest of crcsum (SPDX headers in both files). The
-Open Watcom C library source (open-watcom-v2, `bld/clib`) was read as
-a reference for the runtime behaviour listed above, but no code was
-taken from it: the routines are written differently and only to the
-extent crcsum needs. Two things match it of necessity, because they
-are observable output: the 15 `strerror` message strings and the
-`Not enough memory` text. They are short factual strings, already
-printed by `crcsum.exe`.
+repository and are MIT licensed (with SPDX headers). While writing
+them, parts of the Open Watcom C runtime source were read to learn its
+behaviour. That was not a clean-room process.
+
+An independent review found two routines that are close translations
+of Watcom routines: `parse_tail` (from `_SplitParms`) and `set_errno`
+with its `doserrs` table (from `__set_errno_dos`). Until they are
+rewritten, the assembly should not be called independent of Watcom.
+The 15 `strerror` strings and `Not enough memory` are Watcom's text,
+because they are output.
+
+[ASM-PROVENANCE.md](ASM-PROVENANCE.md) is the full record: the Watcom
+files read, what was taken from each, the review routine by routine,
+and the recommended rewrites.
 
 ## Maintenance cost
 
