@@ -16,11 +16,15 @@ secure and must not be used to authenticate untrusted files.
 `crcsum.exe` links [libc16](https://github.com/gr-dos/libc16), a C
 runtime for small-model DOS programs, instead of Open Watcom's own, and
 is built with the Open Watcom toolchain that libc16 pins. By default
-`make` runs `scripts/fetch-libc16`, which clones libc16 at the revision
-pinned in that script into `build/libc16` and builds it there; libc16's
-build fetches its Open Watcom snapshot and JWasm into
-`build/libc16/build/tools`. This needs `git`, `curl`, `xz` and a host C
-compiler. To move to a newer libc16, change the pin.
+`make` runs `scripts/fetch-libc16`, which downloads the libc16 release
+pinned in that script (`libc16-VERSION.zip`), checks it against the
+SHA-256 written there before unpacking it, and unpacks it into
+`build/libc16`. The release's `tools/fetch-watcom` then fetches the Open
+Watcom snapshot libc16 was built with into `build/tools`, also checked
+by SHA-256. This needs `curl`, `unzip`, `sha256sum` and `xz`. To move to
+a newer libc16, set `version` and `sha256` in `scripts/fetch-libc16` to
+the new release's (its `.sha256` asset), both in the same change
+(libc16's `docs/CONSUMERS.md`, "Using libc16").
 
     make                         # fetches libc16 if needed, builds crcsum.exe
     make LIBC16_ROOT=../libc16   # or use a built local libc16 checkout

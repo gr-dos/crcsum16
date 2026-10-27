@@ -34,8 +34,8 @@ jobs:
             echo "new=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # libc16 and its pinned toolchain are fetched by make
-      # (scripts/fetch-libc16).
+      # make fetches the pinned libc16 release (scripts/fetch-libc16) and
+      # the Open Watcom snapshot it names.
 
       - name: Install DOSBox-X and NASM
         if: steps.version.outputs.new == 'true'
