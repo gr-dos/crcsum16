@@ -145,3 +145,19 @@ history of PR #3 (commit `1bd6ac4`).
 
 Nothing from this experiment should be carried into `gr-dos/libc16`,
 which keeps its own specification-first process.
+
+## Moving to libc16
+
+When `crcsum.exe` moved from Open Watcom's runtime to
+[libc16](https://github.com/gr-dos/libc16), the C version stopped
+showing Watcom's behaviour, so the assembly had to follow libc16
+instead. `parse_tail`, `open_ro`, `set_errno`, the `errtab` and
+`errlist` tables and the output code (`fmt_out`, `putc`, `flush`) were
+rewritten from libc16's specifications (`docs/spec/startup.md`,
+`io.md`, `stdio.md`, `string.md`) by Claude, in the session that wrote
+those specifications. That session has not read the Open Watcom
+runtime source, and did not use the routines it replaced as a model:
+the new `parse_tail` follows the splitter written for
+[truncate16](https://github.com/gr-dos/truncate16). Both suites pass
+against the libc16 build (`tests/run.sh` 72 of 72, `tests/compare.sh`
+778 of 778). Nothing went from this repository into libc16.

@@ -2,12 +2,11 @@
 ; crcsum - compute and check CRC-32 checksums
 ;
 ; An 8086 assembly version of crcsum, as a .COM program using only DOS
-; 2.0 calls.  The C version (main.c and its modules, built with Open
-; Watcom) is the specification: options, output, messages and
-; ERRORLEVELs are the same, and so are the parts of the C runtime they
-; depend on, which are reimplemented here from their documented and
-; observed behaviour: argument splitting, errno and strerror, and stdio
-; buffering.  See docs/ASM.md.
+; 2.0 calls.  The C version (main.c and its modules, built with libc16)
+; is the specification: options, output, messages and ERRORLEVELs are
+; the same, and so are the parts of libc16 they depend on, which are
+; reimplemented here from libc16's specs: argument splitting, errno and
+; strerror, and stdio buffering.  See docs/ASM.md.
 ;
 ; Build: nasm -f bin -DVERSION='"0.01"' -o crcsum.com src/crcsum.asm
 ;
@@ -48,30 +47,27 @@ DTA_NAME    equ 0x1e
 FINDATTR    equ 0x27        ; normal, read-only, hidden, system, archive
 SKIPATTR    equ 0x18        ; directory, volume label
 
-; A buffered output stream, as a C runtime FILE.
+; An output stream, written out at the end of each message.
 S_HANDLE    equ 0
 S_BUF       equ 2
 S_SIZE      equ 4
 S_CNT       equ 6
-S_LBF       equ 8           ; flush at each '\n' (a device)
-S_ERR       equ 9           ; a write failed, as ferror()
+S_ERR       equ 8           ; a write failed, as ferror()
+S_ERRNO     equ 9           ; errno from the first failed write
 
 ; Messages for strerror, numbered as errlist below.
-E_2BIG      equ 0
-E_ACCES     equ 1
-E_BADF      equ 2
-E_EXIST     equ 3
-E_INVAL     equ 4
-E_MFILE     equ 5
-E_NODEV     equ 6
+E_NOERR     equ 0
+E_2BIG      equ 1
+E_ACCES     equ 2
+E_BADF      equ 3
+E_EXIST     equ 4
+E_INVAL     equ 5
+E_MFILE     equ 6
 E_NOENT     equ 7
-E_NOERR     equ 8
-E_NOEXEC    equ 9
-E_NOMEM     equ 10
-E_NOSPC     equ 11
-E_RANGE     equ 12
-E_UNKNOWN   equ 13
-E_XDEV      equ 14
+E_NOEXEC    equ 8
+E_NOMEM     equ 9
+E_NOSPC     equ 10
+E_XDEV      equ 11
 
 start:
         cld
@@ -85,20 +81,10 @@ start:
         int     0x21
         jc      nomem
 
-        mov     ah, 0x30
-        int     0x21
-        mov     [dosmajor], al
         mov     dx, dta
         mov     ah, 0x1a
         int     0x21
 
-        ; stdout is line buffered on a device, as in the C runtime
-        mov     bx, 1
-        call    isatty
-        jz      .notty
-        mov     word [out_s + S_SIZE], 134
-        mov     byte [out_s + S_LBF], 1
-.notty:
         call    parse_tail
 
 ; Options.  Each option is replaced by 0 in argv.
@@ -209,6 +195,8 @@ start:
         call    flush
         cmp     byte [out_s + S_ERR], 0
         je      .exit
+        mov     al, [out_s + S_ERRNO]   ; as main.c's write_errno
+        mov     [errno], al
         mov     si, m_write
         call    fmt_err
         mov     byte [rc], RC_FATAL
@@ -251,12 +239,13 @@ nomem:
         int     0x21
 
 ;
-; Split the command tail into argv, as the C runtime does: blanks
-; separate arguments, '"' turns quoting on and off, and \" is a
-; literal '"', or a quote if a backslash comes before it.  The
-; arguments are copied in place, since one is never longer than its
-; text, and each is ended by a NUL.  AL is the byte, AH the one before
-; it in the tail, DL is 1 inside quotes.
+; Split the command tail into argv as libc16 does, which is Microsoft
+; C's rule: blanks (space, tab) separate arguments; '"' turns quoting
+; on and off and is removed; a run of 2n backslashes before '"' gives n
+; backslashes and a toggle, and 2n + 1 give n backslashes and a literal
+; '"'; any other backslash is literal.  The arguments are copied in
+; place, since one is never longer than its text, and each is ended by
+; a NUL.  DL is 1 inside quotes; AH counts a run of backslashes.
 ;
 parse_tail:
         mov     si, TAIL
@@ -269,10 +258,7 @@ parse_tail:
         mov     [bx + si], bh           ; so the tail ends at a NUL
         mov     di, si
         mov     bx, argv
-        xor     ax, ax
-        cwd
 .blank:
-        mov     ah, al
         lodsb
         cmp     al, ' '
         je      .blank
@@ -280,43 +266,66 @@ parse_tail:
         je      .blank
         test    al, al
         jz      .end
+        dec     si
         mov     [bx], di                ; an argument starts
         inc     bx
         inc     bx
-        jmp     .byte
+        xor     dl, dl
 .next:
-        mov     ah, al
         lodsb
         test    al, al
-        jz      .argend
+        jz      .last
+        cmp     al, '\'
+        je      .run
+        cmp     al, '"'
+        je      .quote
         test    dl, dl
-        jnz     .byte
+        jnz     .copy
         cmp     al, ' '
         je      .argend
         cmp     al, 9
         je      .argend
-.byte:
-        cmp     al, '"'
-        je      .quote
-        cmp     al, '\'
-        jne     .copy
-        cmp     byte [si], '"'
-        jne     .copy
-        inc     si                      ; \" : the backslash is dropped
-        cmp     ah, '\'
-        mov     al, '"'
-        je      .quote
 .copy:
         stosb
         jmp     .next
 .quote:
         xor     dl, 1
         jmp     .next
+.run:
+        mov     ah, 0
+.count:
+        inc     ah
+        lodsb
+        cmp     al, '\'
+        je      .count
+        dec     si                      ; the byte after the run is next
+        cmp     al, '"'
+        mov     al, '\'
+        jne     .lits
+        shr     ah, 1                   ; n
+        sbb     dh, dh                  ; DH = -1 for 2n + 1
+.half:
+        test    ah, ah
+        jz      .dquote
+        stosb
+        dec     ah
+        jmp     .half
+.dquote:
+        test    dh, dh
+        jz      .next                   ; 2n: the '"' toggles when read
+        movsb                           ; 2n + 1: a literal '"'
+        jmp     .next
+.lits:
+        stosb                           ; no '"' follows: all literal
+        dec     ah
+        jnz     .lits
+        jmp     .next
 .argend:
         mov     byte [di], 0
         inc     di
-        test    al, al                  ; a blank, or the end
-        jnz     .blank
+        jmp     .blank
+.last:
+        mov     byte [di], 0
 .end:
         mov     [argv_end], bx
         ret
@@ -454,12 +463,7 @@ check_list:
         jmp     .fatal_list
 .opened:
         mov     [mhandle], ax
-        mov     bx, ax
-        mov     word [msize], 512       ; the C runtime's buffer sizes
-        call    isatty
-        jz      .file
-        mov     word [msize], 134
-.file:
+        mov     word [msize], 128       ; libc16's fopen buffer size
         mov     word [mcnt], 0
         mov     byte [merr], 0
         mov     byte [lrc], RC_OK
@@ -892,26 +896,14 @@ crc_file:
 .ret:
         ret
 
-; Open the file named at SI for reading, as open(), which skips
-; leading spaces.  Returns the handle in AX; CF set on error.
+; Open the file named at SI for reading, as open().  Returns the
+; handle in AX; CF set on error.
 open_ro:
-        cmp     byte [si], ' '
-        jne     .open
-        inc     si
-        jmp     open_ro
-.open:
         mov     dx, si
         mov     ax, 0x3d00
-        int     0x21
-        jnc     .ret
-        test    ax, ax                  ; error 0 is reported as EMFILE
-        jnz     set_errno
-        mov     byte [errno], E_MFILE
-        stc
-.ret:
-        ret
+        ; fall through
 
-; Call DOS.  If it fails (CF set), set [errno] from the error in AL.
+; Call DOS.  If it fails (CF set), set [errno] from the error in AX.
 dos:
         int     0x21
         jnc     .ret
@@ -919,32 +911,22 @@ dos:
 .ret:
         ret
 
-; Set [errno] from the DOS error in AL, and set CF.  Keeps all
-; registers.  Errors 0 to 18 are looked up in errtab; from DOS 3, 32
-; and 33 (sharing and lock violations) are EACCES and 80 is EEXIST;
-; anything else is unknown.
+; Set [errno] from the DOS error in AX, and set CF.  Keeps all
+; registers.  As in libc16, errors 0 to 18 are looked up in errtab, 80
+; is EEXIST and anything else is EACCES.
 set_errno:
         push    ax
         push    bx
-        cmp     al, 19
+        cmp     ax, 19
         jae     .high
         mov     bx, errtab
         xlat
         jmp     .set
 .high:
-        mov     ah, E_UNKNOWN
-        cmp     byte [dosmajor], 3
-        jb      .ah
-        sub     al, 32
-        cmp     al, 2
-        mov     ah, E_ACCES
-        jb      .ah
-        cmp     al, 80 - 32
-        mov     ah, E_EXIST
-        je      .ah
-        mov     ah, E_UNKNOWN
-.ah:
-        mov     al, ah
+        cmp     ax, 80
+        mov     al, E_EXIST
+        je      .set
+        mov     al, E_ACCES
 .set:
         mov     [errno], al
         pop     bx
@@ -952,26 +934,22 @@ set_errno:
         stc
         ret
 
-; ZF clear if handle BX is a device, as isatty().
-isatty:
-        mov     ax, 0x4400
-        int     0x21
-        jnc     .info
-        xor     dx, dx
-.info:
-        test    dl, 0x80
-        ret
-
 ;
-; Output, buffered as the C runtime does: stdout in 512 bytes, or
-; flushed at each line on a device, and stderr in 64 bytes, flushed at
-; the end of each message.
+; Output.  libc16's streams are unbuffered, so each message is written
+; out when it is complete (in pieces of at most 512 bytes on stdout and
+; 64 on stderr): the bytes, and their order across the two streams, are
+; the same.
 ;
 
 ; Print the format at SI on stdout.
 fmt_out:
         mov     word [cur], out_s
-        jmp     fmt
+        call    fmt
+        push    bx
+        mov     bx, out_s
+        call    flush
+        pop     bx
+        ret
 
 ; Print the format at SI on stderr.
 fmt_err:
@@ -1106,9 +1084,6 @@ putc:
         call    .put
         pop     ax
         call    .put
-        cmp     byte [bx + S_LBF], 0
-        je      .ret
-        call    flush
         jmp     .ret
 .one:
         call    .put
@@ -1127,10 +1102,10 @@ putc:
         je      flush
         ret
 
-; Write out the stream at BX, as the C runtime does: a short write sets
-; errno to ENOSPC and the rest is tried again, and a failed or empty
-; write sets the stream's error flag.  The buffer is emptied either
-; way.  Keeps all registers.
+; Write out the stream at BX, as libc16's write does: a short write
+; sets errno to ENOSPC, and a failed one maps the DOS error.  Either
+; sets the stream's error flag; the first also keeps errno in the
+; stream.  The buffer is emptied either way.  Keeps all registers.
 flush:
         push    ax
         push    cx
@@ -1145,19 +1120,15 @@ flush:
         call    dos
         pop     bx
         jc      .err
-        test    ax, ax
-        jz      .full
         cmp     ax, cx
-        je      .all
-        mov     byte [errno], E_NOSPC
-.all:
-        add     dx, ax
-        sub     cx, ax
-        jmp     .write
-.full:
+        je      .done
         mov     byte [errno], E_NOSPC
 .err:
+        cmp     byte [bx + S_ERR], 0
+        jne     .done
         mov     byte [bx + S_ERR], 1
+        mov     al, [errno]
+        mov     [bx + S_ERRNO], al
 .done:
         mov     word [bx + S_CNT], 0
         pop     dx
@@ -1183,29 +1154,26 @@ check       db  0
 endopts     db  0
 anyfile     db  0
 
-; errno for DOS errors 0 to 18
+; errno for DOS errors 0 to 18, as libc16 maps them
 errtab:
-        db      E_NOERR, E_INVAL, E_NOENT, E_NOENT, E_MFILE, E_ACCES
-        db      E_BADF, E_NOMEM, E_NOMEM, E_NOMEM, E_2BIG, E_NOEXEC
-        db      E_UNKNOWN, E_RANGE, E_EXIST, E_NODEV, E_ACCES, E_XDEV
+        db      E_ACCES, E_INVAL, E_NOENT, E_NOENT, E_MFILE, E_ACCES
+        db      E_BADF, E_NOMEM, E_NOMEM, E_INVAL, E_2BIG, E_NOEXEC
+        db      E_INVAL, E_INVAL, E_ACCES, E_NOENT, E_ACCES, E_XDEV
         db      E_NOENT
 
 ; strerror messages, numbered by the E_* constants
 errlist:
-        db      "Arg list too big", 0
+        db      "No error", 0
+        db      "Arg list too long", 0
         db      "Permission denied", 0
         db      "Bad file number", 0
         db      "File exists", 0
         db      "Invalid argument", 0
         db      "Too many open files", 0
-        db      "No such device", 0
         db      "No such file or directory", 0
-        db      "No error", 0
         db      "Exec format error", 0
         db      "Not enough memory", 0
         db      "No space left on device", 0
-        db      "Result too large", 0
-        db      "unknown error", 0
         db      "Cross-device link", 0
 
 s_check     db  "--check", 0
@@ -1276,7 +1244,6 @@ errbuf      resb 64
 path        resb PATHSIZE
 dta         resb 43
 chbuf       resb 2
-dosmajor    resb 1
 alignb 2
 argv        resw 64
 argv_end    resw 1

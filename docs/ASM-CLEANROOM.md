@@ -9,6 +9,10 @@ rest of `src/crcsum.asm`, crcsum's C sources and black-box tests, and
 has not read the Open Watcom runtime source. See
 [ASM-PROVENANCE.md](ASM-PROVENANCE.md) for the process.
 
+This document is historical: since `crcsum.exe` links libc16, these
+routines follow libc16's specifications instead (see "Moving to
+libc16" in ASM-PROVENANCE.md).
+
 ## 1. Splitting the command tail into arguments
 
 ### Interface
