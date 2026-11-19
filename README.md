@@ -142,8 +142,10 @@ On Linux, a manifest can be made with:
 - `docs/DESIGN.md`: the design
 - `src/crcsum.asm`, `tests/compare.sh`, `tests/probe.asm`,
   `docs/ASM*.md`, `tests/fakeerr.asm`: the assembly experiment
-- `Makefile`: Open Watcom and libc16 build
-- `scripts/fetch-libc16`: fetches and builds the pinned libc16
+- `Makefile`: builds with Open Watcom against libc16
+- `scripts/fetch-libc16`: downloads the pinned libc16 release ZIP,
+  checks its SHA-256 and unpacks its prebuilt `LIBC16.LIB` and headers
+  into `build/libc16` (not used when `LIBC16_ROOT` names a checkout)
 - `VERSION`: the version, compiled in and printed by `--version`
 
 ## License
